@@ -7,7 +7,7 @@ Docs: <https://rennf93.github.io/nethttp-guard/>
 ## Install
 
 ```
-go get github.com/rennf93/nethttp-guard@v1.1.0 github.com/rennf93/guard-core-go/v4@v4.0.5-0.20260926230539-e39ac203568b
+go get github.com/rennf93/nethttp-guard@v1.2.0 github.com/rennf93/guard-core-go/v4@v4.2.0
 ```
 
 ## Usage
