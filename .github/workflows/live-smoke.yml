@@ -32,7 +32,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Bring the smoke stack up (guarded fiber app + redis)
+      - name: Bring the smoke stack up (guarded app + redis)
         run: |
           docker compose -p "$LIVE_SMOKE_PROJECT" -f examples/simple_app/docker-compose.yml up --build -d --wait
 
@@ -43,10 +43,11 @@ jobs:
 
           check() {
             local name="$1" expected="$2"; shift 2
-            local status
-            status=$(curl -sS --max-time 10 -o /tmp/smoke_body -w '%{http_code}' "$@") || {
+            local status body
+            body=$(curl -sS --max-time 10 -o /tmp/smoke_body -w '%{http_code}' "$@") || {
               echo "FAIL: $name (curl error)"; exit 1
             }
+            status="$body"
             if [ "$status" != "$expected" ]; then
               echo "FAIL: $name (expected $expected, got $status)"
               echo "body: $(cat /tmp/smoke_body)"
@@ -55,7 +56,6 @@ jobs:
             echo "ok: $name -> $status"
           }
 
-          # Benign traffic passes the guard untouched.
           check "GET / serves"                 200 "$base/"
           check "GET /health (excluded path)"  200 "$base/health"
 
@@ -68,16 +68,28 @@ jobs:
           grep -q "Too many requests" /tmp/smoke_body || { echo "FAIL: rate limit body"; exit 1; }
           echo "ok: /rate/strict (2nd) -> 429 with default body"
 
-          # Penetration detection: the first XSS payload trips the xss
-          # threat ban (threshold 1 in the demo config) and the resulting
-          # verdict carries the custom 403 body.
+          # Penetration detection: XSS payload in a query parameter is blocked.
           status=$(curl -sS --max-time 10 -o /tmp/smoke_body -w '%{http_code}' \
             -G "$base/search" --data-urlencode 'q=<script>alert(1)</script>')
-          if [ "$status" != "403" ]; then
-            echo "FAIL: XSS query param (expected 403, got $status)"; exit 1
+          if [ "$status" != "400" ]; then
+            echo "FAIL: XSS query param (expected 400, got $status)"; exit 1
+          fi
+          grep -q "Suspicious activity detected" /tmp/smoke_body || { echo "FAIL: suspicious body"; exit 1; }
+          echo "ok: XSS query param -> 400 suspicious block"
+
+          # Auto-ban: repeated violations trip AutoBanThreshold (5); the
+          # resulting ban verdict carries the custom 403 body.
+          banned=0
+          for _ in 1 2 3 4 5 6 7 8; do
+            status=$(curl -sS --max-time 10 -o /tmp/smoke_body -w '%{http_code}' \
+              -G "$base/search" --data-urlencode 'q=<script>alert(1)</script>')
+            if [ "$status" = "403" ]; then banned=1; break; fi
+          done
+          if [ "$banned" != "1" ]; then
+            echo "FAIL: auto-ban never produced a 403"; exit 1
           fi
           grep -q "Blocked by nethttp-guard" /tmp/smoke_body || { echo "FAIL: custom 403 body"; exit 1; }
-          echo "ok: XSS query param -> 403 with custom body"
+          echo "ok: auto-ban -> 403 with custom error body"
 
       - name: Dump container logs on failure
         if: failure()
