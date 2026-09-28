@@ -112,7 +112,7 @@ jobs:
       - name: Run smoke assertions
         run: |
           set -euo pipefail
-          base="http://localhost:8080"
+          base="http://localhost:80"  # nginx edge fronts advanced-app; 8080 is compose-internal
 
           check() {
             local name="$1" expected="$2"; shift 2
