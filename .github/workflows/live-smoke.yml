@@ -100,3 +100,106 @@ jobs:
         if: always()
         run: |
           docker compose -p "$LIVE_SMOKE_PROJECT" -f examples/simple_app/docker-compose.yml down -v --remove-orphans
+
+  live-smoke-advanced:
+    name: Dockerized smoke run (advanced_app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    env:
+      LIVE_SMOKE_PROJECT: nethttp-guard-live-smoke-advanced
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Bring the smoke stack up (app + redis)
+        run: |
+          docker compose -p "$LIVE_SMOKE_PROJECT" -f examples/advanced_app/docker-compose.yml up --build -d --wait
+
+      - name: Run smoke assertions
+        run: |
+          set -euo pipefail
+          base="http://localhost:80"  # nginx edge fronts advanced-app; 8080 is compose-internal
+
+          check() {
+            local name="$1" expected="$2"; shift 2
+            local status
+            status=$(curl -sS --max-time 10 -o /tmp/smoke_body_adv -w '%{http_code}' "$@") || {
+              echo "FAIL: $name (curl error)"; exit 1
+            }
+            if [ "$status" != "$expected" ]; then
+              echo "FAIL: $name (expected $expected, got $status)"
+              echo "body: $(cat /tmp/smoke_body_adv)"
+              exit 1
+            fi
+            echo "ok: $name -> $status"
+          }
+
+          token="admin-token-change-me"
+
+          check "GET / serves"                    200 "$base/"
+          check "GET /health (excluded path)"     200 "$base/health"
+
+          # Route registry guard: /admin/* requires X-Admin-Token; the engine
+          # rejects a missing header with 400 before the handler runs.
+          status=$(curl -sS --max-time 10 -o /tmp/smoke_body_adv -w '%{http_code}' "$base/admin/banned")
+          if [ "$status" != "400" ]; then
+            echo "FAIL: /admin/banned without token (expected 400, got $status)"; exit 1
+          fi
+          grep -q "Missing required header: X-Admin-Token" /tmp/smoke_body_adv || {
+            echo "FAIL: missing-token body"; exit 1
+          }
+          echo "ok: /admin/banned without token -> 400 missing required header"
+
+          check "GET /admin/banned with token"    200 -H "X-Admin-Token: $token" "$base/admin/banned"
+
+          # Admin ban/unban drives the engine's ban manager directly.
+          check "POST /admin/ban"                 200 -H "X-Admin-Token: $token" -H "Content-Type: application/json" \
+            -d '{"ip": "203.0.113.9", "seconds": 120, "reason": "live smoke"}' "$base/admin/ban"
+          curl -sS --max-time 10 -H "X-Admin-Token: $token" "$base/admin/banned" | grep -q '"banned_ips":1' || {
+            echo "FAIL: banned count did not reach 1"; exit 1
+          }
+          echo "ok: /admin/banned reports 1 banned ip"
+          check "POST /admin/unban"               200 -H "X-Admin-Token: $token" -H "Content-Type: application/json" \
+            -d '{"ip": "203.0.113.9"}' "$base/admin/unban"
+
+          # Endpoint rate limit: /rate/burst allows 5 requests per 60 seconds;
+          # the custom 429 body overrides the default message.
+          for _ in 1 2 3 4 5; do
+            status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$base/rate/burst")
+            if [ "$status" != "200" ]; then
+              echo "FAIL: /rate/burst within limit (expected 200, got $status)"; exit 1
+            fi
+          done
+          status=$(curl -sS --max-time 10 -o /tmp/smoke_body_adv -w '%{http_code}' "$base/rate/burst")
+          if [ "$status" != "429" ]; then
+            echo "FAIL: /rate/burst 6th request (expected 429, got $status)"; exit 1
+          fi
+          grep -q "Rate limit exceeded, slow down" /tmp/smoke_body_adv || { echo "FAIL: custom 429 body"; exit 1; }
+          echo "ok: /rate/burst 6th request -> 429 with custom body"
+
+          # Penetration detection: XSS payload in a query parameter is blocked
+          # as suspicious activity (400 default body; CustomErrorResponses
+          # only tunes 403 and 429 here).
+          status=$(curl -sS --max-time 10 -o /tmp/smoke_body_adv -w '%{http_code}' \
+            -G "$base/test/xss" --data-urlencode 'q=<script>alert(1)</script>')
+          if [ "$status" != "400" ]; then
+            echo "FAIL: XSS query param (expected 400, got $status)"; exit 1
+          fi
+          grep -q "Suspicious activity detected" /tmp/smoke_body_adv || { echo "FAIL: suspicious body"; exit 1; }
+          echo "ok: XSS query param -> 400 suspicious block"
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          docker compose -p "$LIVE_SMOKE_PROJECT" -f examples/advanced_app/docker-compose.yml logs --no-color
+
+      - name: Bring the smoke stack down
+        if: always()
+        run: |
+          docker compose -p "$LIVE_SMOKE_PROJECT" -f examples/advanced_app/docker-compose.yml down -v --remove-orphans
