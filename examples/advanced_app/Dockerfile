@@ -7,7 +7,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY middleware.go request.go ./
+COPY middleware.go request.go websocket.go ./
 COPY examples/advanced_app/ examples/advanced_app/
 
 RUN CGO_ENABLED=0 go build -trimpath -o /out/server ./examples/advanced_app/cmd/server
