@@ -198,3 +198,45 @@ func TestStatusHandlerDirect(t *testing.T) {
 		t.Fatalf("handler must serve a JSON object, got %q", rec.Body.String())
 	}
 }
+
+func TestStatusRouteCloudProviderRefreshSnapshot(t *testing.T) {
+	engine := newTestEngine(t, nil)
+	// A private manager (Engine.Cloud is an exported field): the package
+	// default is a process global, and this test must not leak readiness
+	// into the sibling assertions.
+	engine.Cloud = guardcore.NewCloudManager()
+	engine.Cloud.SetRangeFetcher(func(provider string) ([]string, map[string]string, error) {
+		return []string{"203.0.113.0/24"}, nil, nil
+	})
+	if err := engine.Cloud.RefreshAsync([]string{"AWS"}, 300); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	mux := http.NewServeMux()
+	if err := AddStatusRoute(mux, engine, ""); err != nil {
+		t.Fatalf("add status route: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", DefaultStatusPath, nil))
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("status payload must be JSON: %v", err)
+	}
+	providers := payload["cloud_providers"].(map[string]any)
+	aws, ok := providers["AWS"].(map[string]any)
+	if !ok {
+		t.Fatal("AWS must be listed")
+	}
+	if ready, ok := aws["ready"].(bool); !ok || !ready {
+		t.Fatalf("a refreshed provider must report ready=true, got %v", aws["ready"])
+	}
+	if refreshed, ok := aws["last_refreshed"].(string); !ok || refreshed == "" {
+		t.Fatalf("a refreshed provider must carry a last_refreshed stamp, got %v", aws["last_refreshed"])
+	}
+	gcp, ok := providers["GCP"].(map[string]any)
+	if !ok {
+		t.Fatal("GCP must be listed")
+	}
+	if refreshed, ok := gcp["last_refreshed"]; !ok || refreshed != nil {
+		t.Fatalf("a never-refreshed provider must report last_refreshed=null, got %v", refreshed)
+	}
+}
