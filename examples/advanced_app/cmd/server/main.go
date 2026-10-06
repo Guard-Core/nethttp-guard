@@ -40,13 +40,10 @@ func main() {
 	// Route registry: the route-ID middleware in internal/server attaches
 	// the "admin" ID to /admin/* requests and the engine resolves this
 	// config. RequiredHeaders is engine-enforced: missing or mismatched
-	// token requests are rejected before the handlers run.
-	//
-	// Note on ported surface: route-scoped knobs enforced by this engine
-	// port are RequireHTTPS, MaxRequestSize, AllowedContentTypes,
-	// RequiredHeaders, and authentication. Per-route rate limits are NOT
-	// read by the pipeline yet; use SecurityConfig.EndpointRateLimits
-	// (as done for /rate/burst) instead.
+	// token requests are rejected before the handlers run. The pipeline
+	// consumes the other route-scoped knobs too (rate limits, IP
+	// allowlists/blocklists, RequireHTTPS, MaxRequestSize,
+	// AllowedContentTypes, authentication).
 	adminToken := envOr("ADMIN_TOKEN", "admin-token-change-me")
 	engine.Routes.Register("admin", func(rc *guardcore.RouteConfig) {
 		rc.RequiredHeaders = guardcore.RequiredHeaders{

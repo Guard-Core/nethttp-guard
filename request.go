@@ -94,7 +94,10 @@ func (s *requestShim) Headers() guardcore.Headers {
 	headers := guardcore.NewHeaders()
 	for name, values := range s.req.Header {
 		if len(values) > 0 {
-			headers.Set(name, values[0])
+			// Multi-line headers join with ", " like the reference
+			// adapter's _join_repeated_header_lines: an X-Forwarded-For
+			// chain split across repeated header lines is one chain.
+			headers.Set(name, strings.Join(values, ", "))
 		}
 	}
 	if s.req.Host != "" {

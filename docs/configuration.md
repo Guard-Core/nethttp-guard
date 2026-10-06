@@ -25,18 +25,17 @@ cfg.CustomErrorResponses = map[int]string{
 
 ## Address headers
 
-The Python engine skips ssrf scanning for address headers (`host`,
-`x-forwarded-for`, `x-real-ip`, ...) automatically. The Go engine does not
-apply that built-in exclusion yet, so mirror it explicitly when clients can
-send internal hostnames:
+The engine routes proxy identity and forwarding headers (`host`, `origin`,
+`via`, `x-forwarded-for`, `x-real-ip`, `cf-connecting-ip`, ...) through its
+built-in exclusion set and skips only the ssrf category for address-carrying
+headers. Every other detection category still scans those headers, so an XSS
+or SQLi payload smuggled into `X-Forwarded-For` still detects.
 
-```go
-cfg.ExcludedDetectionHeaders = map[string]bool{
-    "host": true, "origin": true, "via": true,
-    "x-forwarded-for": true, "x-forwarded-host": true,
-    "x-real-ip": true, "x-client-ip": true,
-}
-```
+Do NOT add these headers to `ExcludedDetectionHeaders` yourself: a full
+exclusion is broader than the engine's built-in handling and masks real
+attacks carried in those headers. Behind a reverse proxy or load balancer,
+declare it through `TrustedProxies` / `TrustedProxyDepth` instead so bans,
+rate limits, and geo rules key on the forwarded client.
 
 ## Redis
 

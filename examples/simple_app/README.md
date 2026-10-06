@@ -57,17 +57,23 @@ Inline comments in `main.go` walk through every knob used:
   overrides (`EndpointRateLimits`)
 - Auto-banning (`AutoBanThreshold`, `AutoBanDuration`)
 - Penetration detection with all categories enabled
-- Address-header exclusions (mirroring the Python engine's built-in ssrf
-  skip; see the note in the docs site)
+- Proxy trust (`TRUSTED_PROXIES`): the engine resolves the real client from
+  X-Forwarded-For behind a declared proxy, so bans/rate limits/geo key on the
+  client instead of the proxy
+- Address-header handling (built in: the engine skips only the ssrf category
+  for address-carrying headers, other categories still scan them)
 - Blocked user agents (regex patterns)
 - `CustomErrorResponses` for consistent block bodies
 - `ExcludePaths` for health and docs routes
+- Structured logging: `LOG_FORMAT=json` plus optional `LOG_FILE` switches the
+  engine and adapter log streams to JSON records
 - Redis via `REDIS_URL` / `REDIS_PREFIX` (compose wires Redis in; without it
   the managers fall back to in-process state)
-- The `OnBlock` hook: the telemetry seam for wiring
-  [guard-agent-go](https://github.com/rennf93/guard-agent-go) (comment-level
-  guidance in `main.go`; agent integration is not implemented in the engine
-  port yet, and `EnableAgent` fails config validation)
+- Agent telemetry: `EnableAgent` + `AgentHandler` (set `AGENT_OTLP_ENDPOINT`
+  to install an OTLP sink through `CompositeAgentHandler`; any
+  `guardcore.AgentHandler` plugs in, and
+  [guard-agent-go](https://github.com/rennf93/guard-agent-go) bridges via
+  `guardcore.AgentHandlerFunc`). `OnBlock` is the separate local blocking hook.
 
 ## Environment variables
 
@@ -75,3 +81,7 @@ Inline comments in `main.go` walk through every knob used:
 |---|---|---|
 | `REDIS_URL` | (unset; Redis disabled) | When set, bans and rate limits are shared through Redis |
 | `REDIS_PREFIX` | `nethttp_guard:` | Redis key prefix |
+| `TRUSTED_PROXIES` | (unset; no proxy trust) | Comma-separated trusted proxy IPs/CIDRs; enables the X-Forwarded-For chain walk |
+| `LOG_FORMAT` | `text` | `json` switches the engine and adapter log streams to JSON records |
+| `LOG_FILE` | (unset; stderr only) | When set, log records also append to this file |
+| `AGENT_OTLP_ENDPOINT` | (unset; agentless) | When set, installs an OTLP agent sink (`EnableAgent` + `AgentHandler`) |

@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	guardcore "github.com/rennf93/guard-core-go/v4/guardcore"
 	nethttp "github.com/rennf93/nethttp-guard"
@@ -37,17 +38,23 @@ func main() {
 		// Penetration detection: all categories, default thresholds.
 		c.EnablePenetrationDetection = true
 
-		// The Python engine automatically skips ssrf scanning for address
-		// headers (host, x-forwarded-for, x-real-ip, ...). The Go engine
-		// does not apply that built-in exclusion yet, so mirror it here;
-		// otherwise a plain "Host: localhost" request is flagged as ssrf.
-		c.ExcludedDetectionHeaders = map[string]bool{
-			"host": true, "origin": true, "via": true,
-			"x-forwarded-for": true, "x-forwarded-host": true,
-			"x-real-ip": true, "x-client-ip": true,
-			"x-cluster-client-ip": true, "cf-connecting-ip": true,
-			"true-client-ip": true, "fly-client-ip": true,
-			"x-envoy-external-address": true,
+		// Proxy trust: when this app sits behind a reverse proxy or load
+		// balancer, declare it here. The engine then resolves the real
+		// client from X-Forwarded-For (walking the chain right-to-left
+		// under TrustedProxyDepth), so rate limits, bans, and geo rules
+		// key on the forwarded client instead of the proxy address.
+		//
+		// Note on address headers and detection: the engine already
+		// routes proxy identity/forwarding headers (host, origin, via,
+		// x-forwarded-for, x-real-ip, cf-connecting-ip, ...) through its
+		// built-in exclusion set and skips only the ssrf category for
+		// address-carrying headers - every other category still scans
+		// them (guardcore/headerexclusions.go). Do NOT hand-add these
+		// headers to ExcludedDetectionHeaders: full exclusion masks real
+		// attacks (XSS, SQLi, recon payloads) smuggled in those headers.
+		if proxies := os.Getenv("TRUSTED_PROXIES"); proxies != "" {
+			c.TrustedProxies = strings.Split(proxies, ",")
+			c.TrustXForwardedProto = true
 		}
 
 		// Blocked user agents (regex patterns).
@@ -63,12 +70,38 @@ func main() {
 			"/docs", "/redoc", "/openapi.json", "/favicon.ico", "/static", "/health",
 		}
 
-		// OnBlock is the engine's telemetry seam. Guard Agent integration
-		// is not implemented in guard-core-go yet (setting EnableAgent
-		// fails config validation), so wire the agent from here: forward
-		// these payloads to guard-agent-go
-		// (https://github.com/rennf93/guard-agent-go) once its event
-		// pipeline accepts engine events.
+		// Structured logging: LOG_FORMAT=json (and optionally LOG_FILE)
+		// switches the engine's log stream to JSON records; the adapter
+		// below shares the stream through WithLogger.
+		if logFormat := os.Getenv("LOG_FORMAT"); logFormat != "" {
+			c.LogFormat = logFormat
+		}
+		if logFile := os.Getenv("LOG_FILE"); logFile != "" {
+			c.LogFile = logFile
+		}
+
+		// Agent telemetry: EnableAgent works - the engine validates it
+		// and installs the event stream whenever AgentHandler is set.
+		// Any guardcore.AgentHandler plugs in directly; CompositeAgent
+		// Handler fans one stream out to several sinks (OTLP, Logfire,
+		// your own), and guard-agent-go bridges through
+		// guardcore.AgentHandlerFunc (its SendEvent carries a context
+		// and its own event model). OnBlock below is the separate local
+		// blocking hook, independent of the agent stream.
+		if agentEndpoint := os.Getenv("AGENT_OTLP_ENDPOINT"); agentEndpoint != "" {
+			c.EnableAgent = true
+			c.AgentHandler = guardcore.NewCompositeAgentHandler([]guardcore.AgentHandler{
+				guardcore.NewOtelHandler(guardcore.OtelConfig{
+					ServiceName:      "nethttp-guard-simple-app",
+					ExporterEndpoint: agentEndpoint,
+				}),
+			}, nil)
+		}
+
+		// OnBlock is the engine's local blocking hook (payload fields:
+		// check_name, reason, trigger_info, client_ip, path, method,
+		// status_code, passive_mode). The agent event stream above is
+		// the telemetry seam; this hook is for local reactions.
 		c.OnBlock = func(req guardcore.Request, payload map[string]any) {
 			log.Printf("guard blocked %s %s from %s via %s: %s",
 				payload["method"], payload["path"], payload["client_ip"],
@@ -107,7 +140,17 @@ func main() {
 	}()
 
 	// The adapter middleware: standard func(http.Handler) http.Handler.
-	guard, err := nethttp.New(engine)
+	// WebSocket upgrades are guarded by default (blocked handshakes
+	// answer the engine verdict through the reference's close shapes);
+	// WithWebSocketGuard(false) opts out. WithLogger shares the engine's
+	// structured stream with the adapter's own lines: SetupCustomLogging
+	// installs whatever the config switch selected (text or JSON) and
+	// returns the logger.
+	var opts []nethttp.Option
+	if cfg.LogFormat == "json" || cfg.LogFile != "" {
+		opts = append(opts, nethttp.WithLogger(guardcore.SetupCustomLogging(cfg.LogFile, cfg.LogFormat)))
+	}
+	guard, err := nethttp.New(engine, opts...)
 	if err != nil {
 		log.Fatalf("middleware: %v", err)
 	}

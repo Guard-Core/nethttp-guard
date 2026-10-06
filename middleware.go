@@ -15,6 +15,10 @@ type middleware struct {
 	engine   *guardcore.Engine
 	maxBytes int64
 	logger   *log.Logger
+	// wsGuard intercepts WebSocket upgrade requests and rejects blocked
+	// handshakes with the reference's close shapes (guard/websocket.py).
+	// On by default; WithWebSocketGuard disables it.
+	wsGuard bool
 }
 
 type Option func(*middleware)
@@ -35,11 +39,21 @@ func WithLogger(logger *log.Logger) Option {
 	}
 }
 
+// WithWebSocketGuard turns the WebSocket upgrade guard on or off. With
+// the guard off, upgrades flow through the plain request checks and a
+// blocked handshake answers like any blocked request (no close-shape
+// headers).
+func WithWebSocketGuard(enabled bool) Option {
+	return func(m *middleware) {
+		m.wsGuard = enabled
+	}
+}
+
 func New(engine *guardcore.Engine, opts ...Option) (func(http.Handler) http.Handler, error) {
 	if engine == nil {
 		return nil, errors.New("engine must not be nil")
 	}
-	m := &middleware{engine: engine, maxBytes: DefaultMaxBodyBytes, logger: log.Default()}
+	m := &middleware{engine: engine, maxBytes: DefaultMaxBodyBytes, logger: log.Default(), wsGuard: true}
 	for _, opt := range opts {
 		opt(m)
 	}
@@ -48,14 +62,35 @@ func New(engine *guardcore.Engine, opts ...Option) (func(http.Handler) http.Hand
 
 func (m *middleware) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := newRequestShim(r, m.maxBytes)
+		shim := newRequestShim(r, m.maxBytes)
+		req := guardcore.Request(shim)
+		isUpgrade := m.wsGuard && IsWebSocketUpgrade(r)
+		if isUpgrade {
+			req = &wsGuardRequest{requestShim: shim}
+			// The reference websocket.py ordering: an undeterminable
+			// client address fails the handshake closed before any check
+			// runs.
+			if shim.ClientHost() == "" && m.engine.Config.FailSecure {
+				m.logger.Printf("guardcore nethttp: websocket client address could not be determined, failing closed")
+				m.rejectWebSocket(w, WSCloseClientAddressUnknown)
+				return
+			}
+		}
 		verdict, err := m.check(req)
 		if err != nil {
 			m.logger.Printf("guardcore nethttp: engine malfunction, failing closed: %v", err)
+			if isUpgrade {
+				m.rejectWebSocket(w, WSCloseSecurityCheckFailed)
+				return
+			}
 			applyResponse(w, m.engine.CreateErrorResponse(500, failClosedMessage))
 			return
 		}
 		if verdict != nil {
+			if isUpgrade {
+				m.rejectWebSocket(w, websocketCloseForVerdict(verdict))
+				return
+			}
 			applyResponse(w, verdict)
 			return
 		}

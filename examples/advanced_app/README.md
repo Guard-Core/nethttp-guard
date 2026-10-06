@@ -76,28 +76,32 @@ curl -s -X POST http://localhost/admin/unban -H 'X-Admin-Token: admin-token-chan
 - Auto-banning (`AutoBanThreshold`, `AutoBanDuration`) and per-threat bans
   (`ThreatBanConfig` for `sqli` and `xss`)
 - Penetration detection with all categories
-- Address-header exclusions (mirroring the Python engine's built-in ssrf
-  skip; without it nginx's forwarded headers get flagged)
+- Address-header handling (built in: the engine routes proxy identity and
+  forwarding headers through its default exclusion set and skips only the
+  ssrf category for address-carrying headers, so nginx's forwarded headers
+  never get flagged - and attacks in them still detect)
 - `CustomErrorResponses` for consistent block bodies (403 and 429)
 - `ExcludePaths` so probes never touch the pipeline
 - `LogRequestLevel` / `LogSuspiciousLevel`
 - Route-scoped guards through `RouteRegistry` (`RequiredHeaders` on
   `/admin/*`), attached with `nethttp.WithRouteID`
-- `OnBlock` hook: the telemetry seam for
-  [guard-agent-go](https://github.com/rennf93/guard-agent-go) wiring
-  (comment-level guidance in `internal/config/config.go`; `EnableAgent` is
-  fail-closed in this port, so the hook is the integration point)
+- Agent telemetry: `EnableAgent` + `AgentHandler` (set `AGENT_OTLP_ENDPOINT`
+  to install an OTLP sink through `CompositeAgentHandler`; any
+  `guardcore.AgentHandler` plugs in, and
+  [guard-agent-go](https://github.com/rennf93/guard-agent-go) bridges via
+  `guardcore.AgentHandlerFunc`). `OnBlock` is the separate local blocking
+  hook.
 
 ## Intentional simplifications
 
 - The admin gate uses `RequiredHeaders` (a real engine-enforced route guard).
-  Route-level `IPWhitelist` is not consumed by the pipeline in this port yet;
-  use the global `Whitelist` or edge ACLs for IP gating.
-- Per-route rate limits are not read by the pipeline yet; endpoint limits are
-  expressed with `EndpointRateLimits` instead.
-- The `/test/*` payloads ride in query parameters because the pipeline does
-  not scan request bodies in this port (see the
-  [guard-core-go roadmap](https://rennf93.github.io/guard-core-go/roadmap/)).
+  Route-level `IPWhitelist`/`IPBlacklist` are engine-enforced too
+  (`RouteRegistry.Register`).
+- Per-route rate limits (`RouteConfig.RateLimit` / `RateLimitWindow`) are
+  engine-enforced; `EndpointRateLimits` covers path-keyed limits that need no
+  route registration.
+- Request bodies are scanned (capped at the detection inspect budget); the
+  `/test/*` payloads ride in query parameters to keep the demo curl-friendly.
 
 ## Environment variables
 

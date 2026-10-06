@@ -45,18 +45,15 @@ func New() (*guardcore.SecurityConfig, error) {
 		// Detection: every category, default detector tuning.
 		c.EnablePenetrationDetection = true
 
-		// The Python engine automatically skips ssrf scanning for address
-		// headers (host, x-forwarded-for, x-real-ip, ...). The Go engine
-		// does not apply that built-in exclusion yet, so mirror it here;
-		// otherwise nginx's forwarded headers get flagged as ssrf.
-		c.ExcludedDetectionHeaders = map[string]bool{
-			"host": true, "origin": true, "via": true,
-			"x-forwarded-for": true, "x-forwarded-host": true,
-			"x-real-ip": true, "x-client-ip": true,
-			"x-cluster-client-ip": true, "cf-connecting-ip": true,
-			"true-client-ip": true, "fly-client-ip": true,
-			"x-envoy-external-address": true,
-		}
+		// Address headers and detection: the engine already routes proxy
+		// identity/forwarding headers (host, origin, via, x-forwarded-*,
+		// x-real-ip, cf-connecting-ip, ...) through its built-in
+		// exclusion set and skips only the ssrf category for
+		// address-carrying headers - every other category still scans
+		// them (guardcore/headerexclusions.go). Do NOT hand-add these
+		// headers to ExcludedDetectionHeaders: full exclusion masks real
+		// attacks smuggled in those headers, and nginx's forwarded
+		// headers do NOT get flagged as ssrf by the default pipeline.
 
 		// Edge filters.
 		c.BlockedUserAgents = []string{"badbot", "evil-crawler", "sqlmap"}
@@ -78,14 +75,26 @@ func New() (*guardcore.SecurityConfig, error) {
 		c.LogRequestLevel = envOr("LOG_REQUEST_LEVEL", "INFO")
 		c.LogSuspiciousLevel = envOr("LOG_SUSPICIOUS_LEVEL", "WARNING")
 
-		// Agent wiring (comment-level): guard-core-go's only telemetry seam
-		// is OnBlock. The Go agent (guard-agent-go,
-		// https://github.com/rennf93/guard-agent-go) mirrors the Python
-		// guard-agent's API: once its engine-event pipeline accepts these
-		// payloads, replace the log line below with the agent client call
-		// and set AGENT_ENDPOINT/AGENT_PROJECT_ID here. EnableAgent stays
-		// false because the engine fails config validation on it (the
-		// feature is not ported yet); do not turn it on.
+		// Agent telemetry: EnableAgent validates fine - the engine
+		// installs the event stream whenever AgentHandler is set (the
+		// stream is never gated on config validation). Any
+		// guardcore.AgentHandler plugs in directly; CompositeAgentHandler
+		// fans one stream out to several sinks (OTLP, Logfire, your own),
+		// and guard-agent-go bridges through guardcore.AgentHandlerFunc
+		// (its SendEvent carries a context and its own event model). Set
+		// AGENT_OTLP_ENDPOINT to install an OTLP sink here.
+		//
+		// OnBlock below is the separate local blocking hook, independent
+		// of the agent stream.
+		if agentEndpoint := os.Getenv("AGENT_OTLP_ENDPOINT"); agentEndpoint != "" {
+			c.EnableAgent = true
+			c.AgentHandler = guardcore.NewCompositeAgentHandler([]guardcore.AgentHandler{
+				guardcore.NewOtelHandler(guardcore.OtelConfig{
+					ServiceName:      "nethttp-guard-advanced-app",
+					ExporterEndpoint: agentEndpoint,
+				}),
+			}, nil)
+		}
 		c.OnBlock = func(req guardcore.Request, payload map[string]any) {
 			log.Printf("guard blocked %s %s from %s via %s: %s",
 				payload["method"], payload["path"], payload["client_ip"],
