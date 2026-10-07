@@ -3,6 +3,22 @@ Release Notes
 
 ___
 
+v1.3.1 (2026-10-07)
+-------------------
+
+guard-core-go v4.3.1 floor (route-id ownership, the trusted-proxy XFF chain walk, agent enrichment)
+---------------------------------------------------------------------------------------------------
+
+### Changed
+
+- **Raised the engine floor to `github.com/rennf93/guard-core-go/v4 v4.3.1`, the family-parity release.** The v4.3.1 engine carries the route-id ownership contract from @HardMax71's report (guard-core #140, reference fix #141/#142): every decorated endpoint owns its route id and the engine's `GetEndpointID` prefers the request's `GuardRouteID` (then the runtime `guard_endpoint_id` extra, then `METHOD:redacted-path`), so behavioral usage/return counters key per route instead of collapsing onto `METHOD:path`; adapters that attach route ids to requests get per-route behavioral buckets with no adapter code. The floor also brings the trusted-proxy XFF chain walk (client identity resolves through `X-Forwarded-For` behind configured trusted proxies, depth-selected from the right with the right-to-left walk fallback, instead of keying bans, rate limits, geo rules and behavioral counters on the proxy IP), the agent enrichment tier (`EnableEnrichment`/`AgentProjectID`/`OtelServiceName`/`OtelResourceAttributes`), the composite/OTel/Logfire agent handlers with the `AgentHandlerFunc` adaptation seam, structured JSON logging (`LogFormat`/`LogFile`), and the cost-parity detection loop (literal prefilter, rune-API scans, fail-closed cost ceilings). Everything flows through the unchanged middleware surface.
+
+### Added
+
+- **The reference status route** (#23, landed on master after the v1.3.0 tag without a changelog entry): `AddStatusRoute(mux, engine, path)` registers a GET handler serving the engine's initialization snapshot JSON (cloud_providers ready/last_refreshed/entries per provider, geo_ip null or the configured resolver's status, redis enabled plus a live O(1) probe with the failure string) at `DefaultStatusPath` (`/_guard/status`) by default, never mutating engine state - the fastapi-guard `add_status_route` + `HandlerInitializer.get_initialization_status` parity.
+
+___
+
 v1.3.0 (2026-10-01)
 -------------------
 

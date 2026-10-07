@@ -2,7 +2,7 @@ module github.com/rennf93/nethttp-guard
 
 go 1.26.0
 
-require github.com/rennf93/guard-core-go/v4 v4.3.0
+require github.com/rennf93/guard-core-go/v4 v4.3.1
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
