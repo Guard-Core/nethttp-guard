@@ -1,10 +1,10 @@
 blank_issues_enabled: false
 contact_links:
   - name: NetHTTP Guard Documentation
-    url: https://rennf93.github.io/nethttp-guard/
+    url: https://guard-core.github.io/nethttp-guard/
     about: Check the documentation for usage information and tutorials
   - name: Usage Questions
-    url: https://github.com/rennf93/nethttp-guard/discussions
+    url: https://github.com/Guard-Core/nethttp-guard/discussions
     about: Please ask and answer questions in GitHub Discussions
   - name: Discord
     url: https://discord.gg/ZW7ZJbjMkK

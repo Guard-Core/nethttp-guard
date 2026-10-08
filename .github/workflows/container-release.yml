@@ -56,7 +56,7 @@ jobs:
 
       - name: Tag and push to GHCR
         run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/nethttp-guard-example"
+          IMAGE="ghcr.io/guard-core/nethttp-guard-example"
           docker tag nethttp-guard-advanced-app:local "${IMAGE}:latest"
           docker push "${IMAGE}:latest"
 

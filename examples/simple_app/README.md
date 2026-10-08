@@ -65,7 +65,7 @@ Inline comments in `main.go` walk through every knob used:
 - Redis via `REDIS_URL` / `REDIS_PREFIX` (compose wires Redis in; without it
   the managers fall back to in-process state)
 - The `OnBlock` hook: the telemetry seam for wiring
-  [guard-agent-go](https://github.com/rennf93/guard-agent-go) (comment-level
+  [guard-agent-go](https://github.com/Guard-Core/guard-agent-go) (comment-level
   guidance in `main.go`; agent integration is not implemented in the engine
   port yet, and `EnableAgent` fails config validation)
 

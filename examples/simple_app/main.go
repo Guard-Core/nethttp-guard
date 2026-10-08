@@ -67,7 +67,7 @@ func main() {
 		// is not implemented in guard-core-go yet (setting EnableAgent
 		// fails config validation), so wire the agent from here: forward
 		// these payloads to guard-agent-go
-		// (https://github.com/rennf93/guard-agent-go) once its event
+		// (https://github.com/Guard-Core/guard-agent-go) once its event
 		// pipeline accepts engine events.
 		c.OnBlock = func(req guardcore.Request, payload map[string]any) {
 			log.Printf("guard blocked %s %s from %s via %s: %s",

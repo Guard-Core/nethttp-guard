@@ -1,8 +1,8 @@
 site_name: nethttp-guard
 site_description: guard-core-go security middleware for net/http
 site_author: Renn F
-repo_url: https://github.com/rennf93/nethttp-guard
-repo_name: rennf93/nethttp-guard
+repo_url: https://github.com/Guard-Core/nethttp-guard
+repo_name: Guard-Core/nethttp-guard
 
 theme:
   name: material

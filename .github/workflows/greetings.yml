@@ -24,7 +24,7 @@ jobs:
             - Redis configuration if relevant (the engine uses Redis for distributed bans and rate limiting)
 
             A few pointers:
-            - Scan [README.md](../blob/main/README.md) for adapter usage, and the [guard-core-go docs](https://github.com/rennf93/guard-core-go) for engine behavior.
+            - Scan [README.md](../blob/main/README.md) for adapter usage, and the [guard-core-go docs](https://github.com/Guard-Core/guard-core-go) for engine behavior.
             - **Security vulnerability?** Do **not** open a public issue - please use GitHub's private vulnerability reporting.
 
             Thanks again - a maintainer will be with you soon.

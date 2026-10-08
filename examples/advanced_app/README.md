@@ -84,7 +84,7 @@ curl -s -X POST http://localhost/admin/unban -H 'X-Admin-Token: admin-token-chan
 - Route-scoped guards through `RouteRegistry` (`RequiredHeaders` on
   `/admin/*`), attached with `nethttp.WithRouteID`
 - `OnBlock` hook: the telemetry seam for
-  [guard-agent-go](https://github.com/rennf93/guard-agent-go) wiring
+  [guard-agent-go](https://github.com/Guard-Core/guard-agent-go) wiring
   (comment-level guidance in `internal/config/config.go`; `EnableAgent` is
   fail-closed in this port, so the hook is the integration point)
 
@@ -97,7 +97,7 @@ curl -s -X POST http://localhost/admin/unban -H 'X-Admin-Token: admin-token-chan
   expressed with `EndpointRateLimits` instead.
 - The `/test/*` payloads ride in query parameters because the pipeline does
   not scan request bodies in this port (see the
-  [guard-core-go roadmap](https://rennf93.github.io/guard-core-go/roadmap/)).
+  [guard-core-go roadmap](https://guard-core.github.io/guard-core-go/roadmap/)).
 
 ## Environment variables
 

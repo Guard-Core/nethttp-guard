@@ -5,7 +5,7 @@ description: Use when wiring guard-core-go security into a Go net/http service, 
 
 # nethttp-guard
 
-net/http middleware adapter for [guard-core-go](https://github.com/rennf93/guard-core-go). Translates `*http.Request` into the guardcore request surface, runs the engine, and translates verdicts to exact HTTP responses. Contains no security logic itself. Module: `github.com/rennf93/nethttp-guard`, Go `1.25.0`, tag `v0.1.0`.
+net/http middleware adapter for [guard-core-go](https://github.com/Guard-Core/guard-core-go). Translates `*http.Request` into the guardcore request surface, runs the engine, and translates verdicts to exact HTTP responses. Contains no security logic itself. Module: `github.com/rennf93/nethttp-guard`, Go `1.25.0`, tag `v0.1.0`.
 
 ## Quick Reference
 
@@ -107,4 +107,4 @@ func WithRouteID(ctx context.Context, routeID string) context.Context
 
 ## Related Projects
 
-- [guard-core-go](https://github.com/rennf93/guard-core-go): the engine this adapter wraps. All detection, rate limiting, bans, configuration, and Redis integration live there; import it as `guardcore "github.com/rennf93/guard-core-go/v4/guardcore"`.
+- [guard-core-go](https://github.com/Guard-Core/guard-core-go): the engine this adapter wraps. All detection, rate limiting, bans, configuration, and Redis integration live there; import it as `guardcore "github.com/rennf93/guard-core-go/v4/guardcore"`.
