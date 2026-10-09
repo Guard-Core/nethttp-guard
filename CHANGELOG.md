@@ -3,6 +3,24 @@ Release Notes
 
 ___
 
+v1.4.0 (2026-10-09)
+-------------------
+
+The websocket guard and the adapter lifecycle surface (guard-core-go v4.3.2 floor)
+----------------------------------------------------------------------------------
+
+### Added
+
+- **The websocket handshake guard** (#25): `GuardWebSocket(engine, r)` runs the engine's websocket handshake checks over the upgrade request (identity resolution, the fail-secure unknown-address close, the ban probe, the `is_ip_allowed` verdict, the ws rate limit, and the penetration detection pass sharing the HTTP pipeline's suspicious counts). A nil result allows the upgrade; a non-nil reason closes it. A nil engine fails closed with the security-check-failed reason. `WebSocketHTTPStatus` maps a close reason onto the HTTP status an upgrade rejection carries (503 try-again-later, 403 policy violation). The ws request shim mirrors the reference `_WebSocketGuardRequest`: method WEBSOCKET, empty body, repeated headers joined with a comma, fresh request state.
+- **The adapter lifecycle surface** (#26): the fastapi-guard middleware lifecycle ops (the FEATURE_MATRIX_GO adapter row's PARTIAL/MISSING entries) as explicit functions over the engine handle (the same seam as `GuardWebSocket` and `AddStatusRoute`): `MarkInitialized` (a warmed engine makes `Initialize` a no-op), `GetInitializationStatus` (the payload `AddStatusRoute` serves), `Reset` (the rate limiter's windows, redis and in-memory), `AgentStats` (enabled/degraded merged with the wired handler's stats), and `RefreshCloudIPRanges` (the redis-backed refresh at the configured TTL, the reference `cloud_handler.refresh_async`, or the in-memory refresh; no blocked providers is the reference's no-op early return).
+
+### Changed
+
+- **Raised the engine floor to `github.com/rennf93/guard-core-go/v4 v4.3.2`, the adapter-parity release.** The v4.3.2 engine carries the ReDoS static-safety trio with the pattern_safety corpus going registry-free (94/94, 0 divergences), the sus-patterns runtime registry with the `pattern_detected` envelope and real dynamic-rules application, the `custom_response_modifier` response pass (`Engine.ModifyResponse` exposes it to this adapter for pass-through composition), the websocket guard surface `GuardWebSocket` drives with suspicious counts shared with the HTTP pipeline, the fifteen SecurityConfig knobs with the performance-monitor wiring (redis tuning, `body_read_timeout` under a slot budget, `log_country_check_level`, `agent_strict` + `on_error`, the pattern-validation cache path, the per-request scan budgets), and the lifecycle/state surface the functions above call (manager exports, `GeoIPManager.IsInitialized`, the cross-instance middleware state registry, the engine side of `MarkInitialized`/`AgentStats`). The floor also brings `redis/go-redis/v9` v9.23.0 transitively, clearing the stdlib-adjacent x/sys exposure (the engine's x/sys v0.48.0); govulncheck stays clean. Everything else flows through the unchanged middleware surface.
+- **Post-transfer metadata sweep** (e87d9c8): repo URLs, docs links, and ecosystem references point at the Guard-Core org, and the upstream-drift suite checks out `Guard-Core/guard-core-go@master`. Module paths, Go imports, and the CHANGELOG history line are deliberately unchanged.
+
+___
+
 v1.3.1 (2026-10-07)
 -------------------
 
