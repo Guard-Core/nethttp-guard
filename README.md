@@ -14,7 +14,7 @@ ___
     <a href="https://github.com/Guard-Core/nethttp-guard/releases">
         <img src="https://img.shields.io/github/v/tag/Guard-Core/nethttp-guard?label=release&color=0080ff" alt="Release tag">
     </a>
-    <a href="https://guard-core.github.io/nethttp-guard/latest/">
+    <a href="https://guard-core.github.io/nethttp-guard/">
         <img src="https://img.shields.io/badge/docs-latest-0080ff.svg" alt="Docs">
     </a>
     <a href="https://github.com/Guard-Core/nethttp-guard/actions/workflows/release.yml">
@@ -47,7 +47,7 @@ ___
 
 <p align="center">
     <a href="https://guard-core.com">Website</a> &middot;
-    <a href="https://guard-core.github.io/nethttp-guard/latest/">Docs</a> &middot;
+    <a href="https://guard-core.github.io/nethttp-guard/">Docs</a> &middot;
     <a href="https://playground.guard-core.com">Playground</a> &middot;
     <a href="https://app.guard-core.com">Dashboard</a> &middot;
     <a href="https://discord.gg/ZW7ZJbjMkK">Discord</a>
@@ -143,7 +143,7 @@ ___
 
 ## Documentation
 
-📚 **[Documentation](https://guard-core.github.io/nethttp-guard/latest/)** - full technical documentation for this package.
+📚 **[Documentation](https://guard-core.github.io/nethttp-guard/)** - full technical documentation for this package.
 
 🛡️ **[Guard Core](https://guard-core.github.io/guard-core/latest/)** - the engine's reference documentation.
 
