@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/rennf93/guard-core-go/v4/guardcore"
 )
@@ -65,8 +66,9 @@ func (m *middleware) wrap(next http.Handler) http.Handler {
 		// merged on top (the reference _inject_cors_headers runs after the
 		// security-header set, so CORS wins on a shared name) whenever the
 		// request carries an Origin and CORS is enabled.
+		cors := m.engine.CORSResponseHeaders(req)
 		headers := m.engine.ResponseHeaders()
-		for name, value := range m.engine.CORSResponseHeaders(req) {
+		for name, value := range cors {
 			headers[name] = value
 		}
 		for name, value := range headers {
@@ -77,25 +79,36 @@ func (m *middleware) wrap(next http.Handler) http.Handler {
 		// response factory's behavioral phase. The adapter captures the
 		// leading response body up to the configured inspect budget and
 		// hands status code plus captured prefix to the engine after the
-		// handler ran: return rules never modify the response.
+		// handler ran: return rules never modify the response. With a
+		// CustomResponseModifier configured the whole response is held
+		// instead, so the modifier (the last step of the reference
+		// process_response) can rewrite it before it is sent.
 		capture := m.newBodyCapture()
-		observed := &statusObserver{ResponseWriter: w, capture: capture}
+		observed := &statusObserver{ResponseWriter: w, capture: capture,
+			hold: m.engine.Config.CustomResponseModifier != nil}
 		next.ServeHTTP(observed, r)
 		m.engine.ProcessResponse(req, &guardcore.Response{
 			StatusCode: observed.status(),
 			Headers:    map[string]string{},
 			Body:       observed.body(),
 		})
+		if observed.hold {
+			observed.release(m.engine, cors)
+		}
 	})
 }
 
 // statusObserver wraps the net/http ResponseWriter to record the status
 // code (defaulting to the implicit 200) and the leading response body bytes.
+// In hold mode it also buffers the whole response (status, body) until
+// release, so the engine's CustomResponseModifier can rewrite it.
 type statusObserver struct {
 	http.ResponseWriter
 	capture     *bodyCapture
 	wroteHeader bool
 	statusCode  int
+	hold        bool
+	held        []byte
 }
 
 func (o *statusObserver) WriteHeader(code int) {
@@ -103,7 +116,9 @@ func (o *statusObserver) WriteHeader(code int) {
 		o.statusCode = code
 		o.wroteHeader = true
 	}
-	o.ResponseWriter.WriteHeader(code)
+	if !o.hold {
+		o.ResponseWriter.WriteHeader(code)
+	}
 }
 
 func (o *statusObserver) Write(p []byte) (int, error) {
@@ -113,6 +128,10 @@ func (o *statusObserver) Write(p []byte) (int, error) {
 	}
 	if o.capture != nil {
 		o.capture.record(p)
+	}
+	if o.hold {
+		o.held = append(o.held, p...)
+		return len(p), nil
 	}
 	return o.ResponseWriter.Write(p)
 }
@@ -129,6 +148,51 @@ func (o *statusObserver) body() []byte {
 		return nil
 	}
 	return o.capture.buf
+}
+
+// release runs the modifier over the held response and writes the result to
+// the real writer. Headers the modifier did not touch keep every value
+// (Set-Cookie and friends); changed or added ones are set, removed ones are
+// deleted. CORS headers are applied again after the modifier, as the
+// reference dispatch injects them on the processed response.
+func (o *statusObserver) release(engine *guardcore.Engine, cors map[string]string) {
+	header := o.ResponseWriter.Header()
+	resp := &guardcore.Response{StatusCode: o.status(), Headers: headerSnapshot(header), Body: o.held}
+	before := make(map[string]string, len(resp.Headers))
+	for name, value := range resp.Headers {
+		before[name] = value
+	}
+	out := engine.ModifyResponse(resp)
+	for name := range before {
+		if _, kept := out.Headers[name]; !kept {
+			header.Del(name)
+		}
+	}
+	for name, value := range out.Headers {
+		if prev, seen := before[name]; !seen || prev != value {
+			header.Set(name, value)
+		}
+	}
+	if header.Get("Content-Length") != "" {
+		header.Set("Content-Length", strconv.Itoa(len(out.Body)))
+	}
+	for name, value := range cors {
+		header.Set(name, value)
+	}
+	o.ResponseWriter.WriteHeader(out.StatusCode)
+	if len(out.Body) > 0 {
+		_, _ = o.ResponseWriter.Write(out.Body)
+	}
+}
+
+func headerSnapshot(h http.Header) map[string]string {
+	out := make(map[string]string, len(h))
+	for name, values := range h {
+		if len(values) > 0 {
+			out[name] = values[0]
+		}
+	}
+	return out
 }
 
 // bodyCapture records the leading bytes of the pass-through response body,
