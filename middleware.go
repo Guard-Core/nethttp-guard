@@ -1,9 +1,11 @@
 package nethttp
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -87,6 +89,11 @@ func (m *middleware) wrap(next http.Handler) http.Handler {
 		observed := &statusObserver{ResponseWriter: w, capture: capture,
 			hold: m.engine.Config.CustomResponseModifier != nil}
 		next.ServeHTTP(observed, r)
+		if observed.hijacked {
+			// The handler took over the connection (websocket upgrade, raw
+			// stream): nothing is left to observe, modify or write.
+			return
+		}
 		m.engine.ProcessResponse(req, &guardcore.Response{
 			StatusCode: observed.status(),
 			Headers:    map[string]string{},
@@ -109,6 +116,44 @@ type statusObserver struct {
 	statusCode  int
 	hold        bool
 	held        []byte
+	hijacked    bool
+}
+
+// Unwrap exposes the underlying writer so http.ResponseController reaches
+// the optional interfaces (deadlines, full duplex, ...) the observer does
+// not wrap itself.
+func (o *statusObserver) Unwrap() http.ResponseWriter { return o.ResponseWriter }
+
+// Flush implements http.Flusher. In pass-through mode it pins the implicit
+// 200 the real writer is about to send and delegates. In hold mode the
+// response is buffered for the CustomResponseModifier (which must see all
+// of it), so Flush is a no-op there and the response is sent at release.
+func (o *statusObserver) Flush() {
+	if o.hold || o.hijacked {
+		return
+	}
+	if !o.wroteHeader {
+		o.statusCode = http.StatusOK
+		o.wroteHeader = true
+	}
+	if f, ok := o.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack implements http.Hijacker by delegating to the underlying writer.
+// A hijacked connection is left alone: the middleware neither releases a
+// held response nor runs the response pass over it.
+func (o *statusObserver) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := o.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	conn, rw, err := h.Hijack()
+	if err == nil {
+		o.hijacked = true
+	}
+	return conn, rw, err
 }
 
 func (o *statusObserver) WriteHeader(code int) {
